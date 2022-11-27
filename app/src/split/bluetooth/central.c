@@ -24,6 +24,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/split/bluetooth/service.h>
 #include <zmk/event_manager.h>
 #include <zmk/events/position_state_changed.h>
+#include <zmk/led_indicators_types.h>
 #include <init.h>
 
 static int start_scan(void);
@@ -43,6 +44,7 @@ struct peripheral_slot {
     struct bt_gatt_subscribe_params subscribe_params;
     struct bt_gatt_discover_params sub_discover_params;
     uint16_t run_behavior_handle;
+    uint16_t update_leds_handle;
     uint8_t position_state[POSITION_STATE_DATA_LEN];
     uint8_t changed_positions[POSITION_STATE_DATA_LEN];
 };
@@ -265,9 +267,14 @@ static uint8_t split_central_chrc_discovery_func(struct bt_conn *conn,
                             BT_UUID_DECLARE_128(ZMK_SPLIT_BT_CHAR_RUN_BEHAVIOR_UUID))) {
         LOG_DBG("Found run behavior handle");
         slot->run_behavior_handle = bt_gatt_attr_value_handle(attr);
+    } else if (!bt_uuid_cmp(((struct bt_gatt_chrc *)attr->user_data)->uuid,
+                            BT_UUID_DECLARE_128(ZMK_SPLIT_BT_UPDATE_LEDS_UUID))) {
+        LOG_DBG("Found update LEDs handle");
+        slot->update_leds_handle = bt_gatt_attr_value_handle(attr);
     }
 
-    bool subscribed = (slot->run_behavior_handle && slot->subscribe_params.value_handle);
+    bool subscribed = (slot->run_behavior_handle && slot->subscribe_params.value_handle &&
+                       slot->update_leds_handle);
 
     return subscribed ? BT_GATT_ITER_STOP : BT_GATT_ITER_CONTINUE;
 }
@@ -584,6 +591,31 @@ int zmk_split_bt_invoke_behavior(uint8_t source, struct zmk_behavior_binding *bi
 
     struct zmk_split_run_behavior_payload_wrapper wrapper = {.source = source, .payload = payload};
     return split_bt_invoke_behavior_payload(wrapper);
+}
+
+static zmk_leds_flags_t led_flags = 0;
+
+static void split_central_update_leds_callback(struct k_work *work) {
+    for (int i = 0; i < ZMK_BLE_SPLIT_PERIPHERAL_COUNT; i++) {
+        if (peripherals[i].state != PERIPHERAL_SLOT_STATE_CONNECTED) {
+            continue;
+        }
+
+        int err =
+            bt_gatt_write_without_response(peripherals[i].conn, peripherals[i].update_leds_handle,
+                                           &led_flags, sizeof(led_flags), true);
+
+        if (err) {
+            LOG_ERR("Failed to write the leds characteristic (err %d)", err);
+        }
+    }
+}
+
+static K_WORK_DEFINE(split_central_update_leds, split_central_update_leds_callback);
+
+int zmk_split_bt_update_leds(zmk_leds_flags_t leds) {
+    led_flags = leds;
+    return k_work_submit_to_queue(&split_central_split_run_q, &split_central_update_leds);
 }
 
 int zmk_split_bt_central_init(const struct device *_arg) {

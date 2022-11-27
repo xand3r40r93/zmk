@@ -12,6 +12,7 @@
 #include <zmk/led_indicators.h>
 #include <zmk/events/led_indicator_changed.h>
 #include <zmk/events/endpoint_selection_changed.h>
+#include <zmk/split/bluetooth/central.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
@@ -51,8 +52,13 @@ zmk_leds_flags_t zmk_leds_get_flags(enum zmk_endpoint endpoint, uint8_t profile)
 }
 
 static void raise_led_changed_event(struct k_work *_work) {
-    ZMK_EVENT_RAISE(
-        new_zmk_led_changed((struct zmk_led_changed){.leds = zmk_leds_get_current_flags()}));
+    zmk_leds_flags_t flags = zmk_leds_get_current_flags();
+
+    ZMK_EVENT_RAISE(new_zmk_led_changed((struct zmk_led_changed){.leds = flags}));
+
+#if IS_ENABLED(CONFIG_ZMK_SPLIT) && IS_ENABLED(CONFIG_ZMK_BLE)
+    zmk_split_bt_update_leds(flags);
+#endif
 }
 
 static K_WORK_DEFINE(led_changed_work, raise_led_changed_event);

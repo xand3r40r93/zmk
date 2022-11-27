@@ -20,6 +20,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/matrix.h>
 #include <zmk/split/bluetooth/uuid.h>
 #include <zmk/split/bluetooth/service.h>
+#include <zmk/events/led_indicator_changed.h>
 
 #define POS_STATE_LEN 16
 
@@ -88,6 +89,28 @@ static void split_svc_pos_state_ccc(const struct bt_gatt_attr *attr, uint16_t va
     LOG_DBG("value %d", value);
 }
 
+static zmk_leds_flags_t led_flags = 0;
+
+static void split_svc_update_leds_callback(struct k_work *work) {
+    ZMK_EVENT_RAISE(new_zmk_led_changed((struct zmk_led_changed){.leds = led_flags}));
+}
+
+static K_WORK_DEFINE(split_svc_update_leds_work, split_svc_update_leds_callback);
+
+static ssize_t split_svc_update_leds(struct bt_conn *conn, const struct bt_gatt_attr *attr,
+                                     const void *buf, uint16_t len, uint16_t offset,
+                                     uint8_t flags) {
+    if (offset + len > sizeof(zmk_leds_flags_t)) {
+        return BT_GATT_ERR(BT_ATT_ERR_INVALID_OFFSET);
+    }
+
+    memcpy((uint8_t *)&led_flags + offset, buf, len);
+
+    k_work_submit(&split_svc_update_leds_work);
+
+    return len;
+}
+
 BT_GATT_SERVICE_DEFINE(
     split_svc, BT_GATT_PRIMARY_SERVICE(BT_UUID_DECLARE_128(ZMK_SPLIT_BT_SERVICE_UUID)),
     BT_GATT_CHARACTERISTIC(BT_UUID_DECLARE_128(ZMK_SPLIT_BT_CHAR_POSITION_STATE_UUID),
@@ -97,6 +120,9 @@ BT_GATT_SERVICE_DEFINE(
     BT_GATT_CHARACTERISTIC(BT_UUID_DECLARE_128(ZMK_SPLIT_BT_CHAR_RUN_BEHAVIOR_UUID),
                            BT_GATT_CHRC_WRITE_WITHOUT_RESP, BT_GATT_PERM_WRITE_ENCRYPT, NULL,
                            split_svc_run_behavior, &behavior_run_payload),
+    BT_GATT_CHARACTERISTIC(BT_UUID_DECLARE_128(ZMK_SPLIT_BT_UPDATE_LEDS_UUID),
+                           BT_GATT_CHRC_WRITE_WITHOUT_RESP, BT_GATT_PERM_WRITE_ENCRYPT, NULL,
+                           split_svc_update_leds, NULL),
     BT_GATT_DESCRIPTOR(BT_UUID_NUM_OF_DIGITALS, BT_GATT_PERM_READ, split_svc_num_of_positions, NULL,
                        &num_of_positions), );
 
