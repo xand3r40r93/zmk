@@ -10,6 +10,7 @@ typedef enum {
     LED_EVENT_OUTPUT,
     LED_EVENT_PROFILE,
     LED_EVENT_CONN,
+    LED_EVENT_INDICATORS,
     LED_EVENT_SIZE,
 } led_event_type_t;
 

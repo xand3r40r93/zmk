@@ -7,6 +7,8 @@
 #include <zmk/events/battery_state_changed.h>
 #include <zmk/events/ble_active_profile_changed.h>
 #include <zmk/events/endpoint_selection_changed.h>
+#include <zmk/events/led_indicator_changed.h>
+#include <zmk/led_indicators.h>
 #include <zmk/led_widgets.h>
 #include <logging/log.h>
 
@@ -170,12 +172,15 @@ static void loop_timer_handler(struct k_timer *timer) {
     }
 
 static int led_widgets_event_listener(const zmk_event_t *ev) {
-    widget_handler(zmk_battery_state_changed, BATTERY, state_of_charge,, <, "bat level %u");
+#if defined(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 #ifdef CONFIG_ZMK_BLE
     widget_handler(zmk_ble_active_profile_changed, PROFILE, index,, ==, "ble profile %u");
 #endif
     widget_handler(zmk_layer_state_changed, LAYER,, zmk_keymap_highest_layer_active(), ==, "layer %u");
     widget_handler(zmk_endpoint_selection_changed, OUTPUT, endpoint,, ==, "endpoint %u");
+    widget_handler(zmk_led_changed, INDICATORS,, zmk_leds_get_current_flags(), &, "indicators %u");
+#endif // CONFIG_ZMK_SPLIT_ROLE_CENTRAL
+    widget_handler(zmk_battery_state_changed, BATTERY, state_of_charge,, <, "bat level %u");
     return ZMK_EV_EVENT_BUBBLE;
 }
 
@@ -189,7 +194,7 @@ static int led_widgets_init() {
 }
 
 ZMK_LISTENER(led_widgets_event, led_widgets_event_listener);
-ZMK_SUBSCRIPTION(led_widgets_event, zmk_battery_state_changed);
+#if defined(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 #if defined(CONFIG_USB)
 ZMK_SUBSCRIPTION(led_widgets_event, zmk_usb_conn_state_changed);
 #endif
@@ -198,5 +203,8 @@ ZMK_SUBSCRIPTION(led_widgets_event, zmk_ble_active_profile_changed);
 #endif
 ZMK_SUBSCRIPTION(led_widgets_event, zmk_layer_state_changed);
 ZMK_SUBSCRIPTION(led_widgets_event, zmk_endpoint_selection_changed);
+ZMK_SUBSCRIPTION(led_widgets_event, zmk_led_changed);
+#endif // CONFIG_ZMK_SPLIT_ROLE_CENTRAL
+ZMK_SUBSCRIPTION(led_widgets_event, zmk_battery_state_changed);
 
 SYS_INIT(led_widgets_init, APPLICATION, CONFIG_ZMK_KSCAN_INIT_PRIORITY);
